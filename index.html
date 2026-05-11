@@ -512,10 +512,11 @@ function renderLastSaved() {
 }
 
 // ══ FX & Price ═════════════════════════════════════════════════════
-
+// 1. 最強化的 Proxy 守門員：加入新的代理伺服器，並過濾掉 Yahoo 的錯誤網頁
 async function fetchWithProxy(targetUrl) {
   const proxies = [
-    `https://api.allorigins.win/get?url=`,
+    `https://api.allorigins.win/raw?url=`,     // 改用 raw 模式直接回傳
+    `https://api.codetabs.com/v1/proxy?quest=`, // 新增備用代理
     `https://corsproxy.io/?`
   ];
   
@@ -527,17 +528,18 @@ async function fetchWithProxy(targetUrl) {
       ]);
       
       if (r.ok) {
-        const data = await r.json();
-        if (data.contents) return JSON.parse(data.contents);
-        return data;
+        const text = await r.text();
+        // 確保回傳的是 JSON 格式，而不是 Yahoo 的 HTML 擋人網頁
+        if (text.trim().startsWith('{')) {
+          return JSON.parse(text);
+        }
       }
     } catch (e) { 
-      continue; 
+      continue; // 失敗就自動換下一個 Proxy
     } 
   }
   throw new Error('All proxies failed');
 }
-
 async function fetchFX() {
   try {
     const r=await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
@@ -549,7 +551,7 @@ async function fetchFX() {
 
 // ══ 即時報價（Yahoo Finance 批次 API）══════════════════════════════
 let priceRefreshTimer = null;
-
+// 2. 報價更新：為台股備援 API 也加上 Timeout，避免證交所當機導致卡死
 async function batchFetchYahoo(etfs) {
   const symbols = etfs.map(e => eCur(e) === 'TWD' ? e + '.TW' : e).join(',');
   const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=regularMarketPrice,regularMarketPreviousClose`;
@@ -567,31 +569,28 @@ async function batchFetchYahoo(etfs) {
     console.warn('Yahoo 報價受阻，切換至台股官方 API');
   }
 
-  // 強化的備援機制：如果 Yahoo 沒抓到台股報價，直接調用證交所與櫃買中心
   const missingTwdEtfs = etfs.filter(e => eCur(e) === 'TWD' && !prices[e]);
   if (missingTwdEtfs.length > 0) {
     try {
-      // 同時拉取「上市」與「上櫃」的今日所有報價
+      // 幫台股備援也加上 6 秒超時機制
+      const fetchWithTimeout = (url) => Promise.race([
+        fetch(url).then(r => r.json()),
+        new Promise((_, rj) => setTimeout(() => rj('t'), 6000))
+      ]);
+
       const [twseRes, tpexRes] = await Promise.allSettled([
-        fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(r => r.json()),
-        fetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes').then(r => r.json())
+        fetchWithTimeout('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
+        fetchWithTimeout('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes')
       ]);
 
       const twseData = twseRes.status === 'fulfilled' ? twseRes.value : [];
       const tpexData = tpexRes.status === 'fulfilled' ? tpexRes.value : [];
 
       missingTwdEtfs.forEach(etf => {
-        // 先在上市名單找
         let target = twseData.find(item => item.Code === etf);
-        if (target && target.ClosingPrice) {
-           prices[etf] = parseFloat(target.ClosingPrice);
-           return; // 找到了就跳出換下一個
-        }
-        // 如果上市沒有，去上櫃名單找
+        if (target && target.ClosingPrice) { prices[etf] = parseFloat(target.ClosingPrice); return; }
         target = tpexData.find(item => item.SecuritiesCompanyCode === etf);
-        if (target && target.Close) {
-           prices[etf] = parseFloat(target.Close);
-        }
+        if (target && target.Close) { prices[etf] = parseFloat(target.Close); }
       });
     } catch (te) { 
       console.error('台股後備方案發生錯誤'); 
@@ -836,18 +835,14 @@ function nextExDate(etf) {
   }
   return null;
 }
-
+// 3. 配息資料抓取：正式套用 Proxy 守門員
 async function fetchDivData(etf, cur) {
   const ticker = cur === 'TWD' ? etf + '.TW' : etf;
   const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=3mo&range=2y&events=div`;
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-
+  
   try {
-    const r = await Promise.race([
-      fetch(proxyUrl),
-      new Promise((_, rj) => setTimeout(() => rj('t'), 6000))
-    ]);
-    const d = await r.json();
+    // 🌟 關鍵修改：這裡改成呼叫我們新寫的 fetchWithProxy，讓它自動幫你切換代理伺服器
+    const d = await fetchWithProxy(targetUrl); 
     const divs = d?.chart?.result?.[0]?.events?.dividends;
     if (!divs) return null;
     const entries = Object.values(divs).sort((a, b) => b.date - a.date);
@@ -858,17 +853,24 @@ async function fetchDivData(etf, cur) {
     return null;
   }
 }
-
+// 4. 更新配息按鈕：加上畫面的「轉圈圈」讀取狀態
 async function fetchAllDivs() {
+  const btn = document.querySelector('button[onclick="fetchAllDivs()"]');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="ti ti-loader-2 spin"></i> 更新中...';
+  btn.disabled = true;
+
   const etfs = [...new Set(txs.map(t=>t.etf))];
   await Promise.all(etfs.map(async e => {
     const data = await fetchDivData(e, eCur(e));
     if (data) divCache[e] = data;
   }));
+  
   renderDividends();
+  btn.innerHTML = originalText;
+  btn.disabled = false;
 }
-
-function renderDividends() {
+async function renderDividends() {
   const etfs = [...new Set(txs.map(t=>t.etf))].filter(e=>unitsOf(e)>0);
   const el = document.getElementById('div-list');
   if (!etfs.length) { el.innerHTML='<p class="empty">新增交易後顯示配息資訊</p>'; return; }
