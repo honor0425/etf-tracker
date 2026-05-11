@@ -132,12 +132,16 @@ input[type=range]{accent-color:var(--blue)}
   .main{grid-template-columns:1fr;padding:8px;gap:8px}
   .header{padding:0 12px}
   .header-right .hbtn:not(:last-child){display:none}
-  .top-bar{padding:4px 12px;gap:8px}
-  #pane-tx{display:none}
+  .top-bar{padding:4px 12px;gap:8px;font-size:11px}
+  #pane-tx{display:none;flex-direction:column;gap:8px}
   #pane-right{display:flex;flex-direction:column;gap:8px}
   #pane-metrics,#pane-holdings,#pane-dividends,#pane-pie,#pane-line{display:none}
   #pane-metrics{display:grid}
   #pane-pie,#pane-line{display:block}
+  /* 手機版表單強制單欄 */
+  .fr,.fr3{grid-template-columns:1fr !important}
+  .metrics{grid-template-columns:1fr 1fr !important}
+  .hh,.hr{grid-template-columns:44px 36px 1fr 64px !important}
 }
 </style>
 </head>
@@ -267,7 +271,7 @@ input[type=range]{accent-color:var(--blue)}
       <div style="position:relative;width:100%;height:260px"><canvas id="lineC" role="img" aria-label="資產累積曲線">資產累積曲線</canvas></div>
       <div class="srow">
         <span class="sl">年化報酬率預測</span>
-        <input type="range" id="r-slider" min="0" max="30" value="8" step="0.5" style="flex:1">
+        <input type="range" id="r-slider" min="0" max="50" value="8" step="0.5" style="flex:1">
         <span class="sv" id="r-disp">8.0%</span>
       </div>
     </div>
@@ -291,23 +295,6 @@ input[type=range]{accent-color:var(--blue)}
   </button>
 </nav>
 </div><!-- /#main-app -->
-
-<!-- 衝突選擇 Modal -->
-  <div class="modal" style="width:460px">
-    <h3>☁️ 雲端資料與本機快取不同</h3>
-    <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">請選擇要使用哪份資料（另一份將被覆蓋）：</p>
-    <div class="sync-grid">
-      <div class="sync-opt" id="local-opt" onclick="pickData('local')">
-        <div style="font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:600;text-transform:uppercase">💻 本機快取</div>
-        <div id="local-info"></div>
-      </div>
-      <div class="sync-opt" id="drive-opt" onclick="pickData('drive')">
-        <div style="font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:600;text-transform:uppercase">☁️ Google 雲端</div>
-        <div id="drive-info"></div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- 匯出 Modal -->
 <div class="modal-bg" id="export-modal">
@@ -455,29 +442,10 @@ async function driveLoad() {
     const r2 = await gFetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`);
     if (!r2) return;
     const driveData = await r2.json();
-    const localRaw = JSON.parse(localStorage.getItem('etf-tracker')||'null');
-    const lt = localRaw?.lastModified ? new Date(localRaw.lastModified) : null;
-    const dt = driveData?.lastModified ? new Date(driveData.lastModified) : null;
-    if (!lt || !dt || Math.abs(dt-lt) < 5000) { applyData(driveData); setSyncSt('ok','已從 Google 雲端載入'); return; }
-    showConflict(localRaw, driveData);
+    // 永遠以雲端資料為主
+    applyData(driveData);
+    setSyncSt('ok', '已從 Google 雲端載入 ' + fmtT(driveData.lastModified));
   } catch(e) { setSyncSt('err','雲端載入失敗'); console.error(e); }
-}
-
-let _driveData = null;
-function showConflict(local, drive) {
-  _driveData = drive;
-  const badge = n => n ? `<span style="background:var(--green-bg);color:var(--green);font-size:10px;font-weight:600;padding:1px 7px;border-radius:4px;margin-left:5px">較新 ✓</span>` : '';
-  const ln = local.lastModified >= drive.lastModified;
-  document.getElementById('local-info').innerHTML = `<div style="font-weight:600;margin-bottom:3px">${(local.txs||[]).length} 筆交易${badge(ln)}</div><div style="font-size:11px;color:var(--text2)">${fmtT(local.lastModified)}</div>`;
-  document.getElementById('drive-info').innerHTML = `<div style="font-weight:600;margin-bottom:3px">${(drive.txs||[]).length} 筆交易${badge(!ln)}</div><div style="font-size:11px;color:var(--text2)">${fmtT(drive.lastModified)}</div>`;
-  document.getElementById('local-opt').style.borderColor = ln ? 'var(--green)' : 'var(--border2)';
-  document.getElementById('drive-opt').style.borderColor = !ln ? 'var(--green)' : 'var(--border2)';
-  document.getElementById('conflict-modal').classList.add('open');
-}
-
-function pickData(src) {
-  const d = src==='drive' ? _driveData : JSON.parse(localStorage.getItem('etf-tracker')||'{}');
-  applyData(d); closeM('conflict-modal'); driveSave(); renderAll(); refreshAll();
 }
 
 async function driveSave() {
@@ -557,14 +525,56 @@ async function fetchFX() {
   } catch(e) { document.getElementById('fx-val').textContent='1 USD ≈ '+usdTwd.toFixed(2)+' TWD'; }
 }
 
-async function fetchPx(etf,cur) {
-  const tk=cur==='TWD'?etf+'.TW':etf;
-  for(const b of['https://query2.finance.yahoo.com','https://query1.finance.yahoo.com']){
-    try{const r=await Promise.race([fetch(`${b}/v8/finance/chart/${tk}?interval=1d&range=1d`,{mode:'cors',credentials:'omit'}),new Promise((_,rj)=>setTimeout(()=>rj('t'),6000))]);const d=await r.json();const p=d?.chart?.result?.[0]?.meta?.regularMarketPrice;if(p&&p>0)return p;}catch(_){}
+// 台灣 ETF 市場別 (tse=上市 / otc=上櫃)
+const TW_MARKET = {
+  '0050':'tse','0056':'tse','006208':'tse','00692':'tse','00713':'tse',
+  '00850':'tse','00881':'tse','00900':'otc','00878':'otc',
+  '00929':'otc','00930':'otc','00934':'otc','00936':'otc',
+};
+
+async function fetchTWSEPrice(ticker) {
+  const market = TW_MARKET[ticker] || 'tse';
+  try {
+    const r = await Promise.race([
+      fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${market}_${ticker}.tw&json=1&delay=0`),
+      new Promise((_,rj)=>setTimeout(()=>rj('t'),5000))
+    ]);
+    const d = await r.json();
+    const price = parseFloat(d?.msgArray?.[0]?.z);
+    if (price > 0) return price;
+    const prev = parseFloat(d?.msgArray?.[0]?.y); // 收盤後取昨收
+    if (prev > 0) return prev;
+  } catch(_) {}
+  return null;
+}
+
+async function fetchYahooPrice(sym) {
+  for (const b of ['https://query2.finance.yahoo.com','https://query1.finance.yahoo.com']) {
+    try {
+      const r = await Promise.race([
+        fetch(`${b}/v8/finance/chart/${sym}?interval=1d&range=1d`,{mode:'cors',credentials:'omit'}),
+        new Promise((_,rj)=>setTimeout(()=>rj('t'),7000))
+      ]);
+      const d = await r.json();
+      const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (p && p>0) return p;
+    } catch(_) {}
   }
   return null;
 }
 
+async function fetchPx(etf, cur) {
+  if (cur === 'TWD') {
+    const p = await fetchTWSEPrice(etf);
+    if (p) return p;
+    return await fetchYahooPrice(etf+'.TW'); // fallback
+  }
+  return await fetchYahooPrice(etf);
+}
+
+let priceRefreshTimer = null;
+
+async function fetchAllPrices() {
 async function fetchAllPrices() {
   const etfs=[...new Set(txs.map(t=>t.etf))]; if(!etfs.length)return;
   etfs.forEach(e=>{ if(!etfPrices[e])etfPrices[e]={px:0,cur:eCur(e),st:'loading'}; else etfPrices[e].st='loading'; });
@@ -575,7 +585,12 @@ async function fetchAllPrices() {
     if(p){etfPrices[e].px=p;etfPrices[e].st='ok';ok++;}else etfPrices[e].st='failed';
     renderHoldings();renderMetrics();renderPie();renderLine();
   }));
-  document.getElementById('fetch-st').textContent=`已更新 ${ok}/${etfs.length} 支（${new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}）`;
+  const now=new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('fetch-st').textContent=`已更新 ${ok}/${etfs.length} 支（${now}）`;
+  // 啟動自動刷新（每5分鐘）
+  clearInterval(priceRefreshTimer);
+  priceRefreshTimer = setInterval(fetchAllPrices, 5*60*1000);
+}
 }
 
 async function refreshAll() {
@@ -634,11 +649,19 @@ function renderHoldings(){
       const cost=txs.filter(t=>t.etf===e&&t.act==='buy').reduce((s,t)=>s+toTwd(t.units*t.priceOrig,t.cur),0)-txs.filter(t=>t.etf===e&&t.act==='sell').reduce((s,t)=>s+toTwd(t.units*t.priceOrig,t.cur),0);
       const gain=mv>0?mv-cost:0;
       let ph='';
-      if(p.st==='loading')ph=`<span style="color:var(--text2);font-size:11px"><i class="ti ti-loader-2 spin"></i></span>`;
-      else if(p.st==='ok')ph=`<span class="hnum" style="color:${gain>=0?'var(--green)':'var(--red)'}">${cur==='USD'?fmtU(p.px):p.px.toLocaleString('zh-TW',{minimumFractionDigits:2})}</span>`;
-      else ph=`<input type="number" style="width:80px;font-size:11px;padding:3px 6px" placeholder="手動輸入" value="${p.man??''}" oninput="etfPrices['${e}'].man=parseFloat(this.value)||null;saveLocal();renderAll()">`;
+      if(p.st==='loading') ph=`<span style="color:var(--text2);font-size:11px"><i class="ti ti-loader-2 spin"></i> 更新中</span>`;
+      else if(p.st==='ok') ph=`<span class="hnum" style="color:${gain>=0?'var(--green)':'var(--red)'}">${cur==='USD'?fmtU(p.px):p.px.toLocaleString('zh-TW',{minimumFractionDigits:2})}</span>`;
+      else ph=`<span style="color:var(--text3);font-size:11px;cursor:pointer" onclick="retryPrice('${e}')" title="點擊重試"><i class="ti ti-refresh"></i> 重試</span>`;
       return`<div class="hr"><span style="font-weight:700">${e}</span><span><span class="${cur==='USD'?'badge-usd':'badge-twd'}">${cur}</span></span><span class="hnum">${units.toLocaleString()} 股</span><span>${ph}</span><span class="hmv" style="color:${mv>0?(gain>=0?'var(--green)':'var(--red)'):'var(--text3)'}">${mv>0?fmtN(mv):'—'}</span></div>`;
     }).join('');
+}
+
+async function retryPrice(etf) {
+  if(etfPrices[etf]) etfPrices[etf].st='loading';
+  renderHoldings();
+  const p = await fetchPx(etf, eCur(etf));
+  if(p){etfPrices[etf].px=p;etfPrices[etf].st='ok';}else etfPrices[etf].st='failed';
+  renderHoldings();renderMetrics();renderPie();renderLine();
 }
 
 function renderPie(){
@@ -889,7 +912,11 @@ function setTab(name) {
 
   // Left col
   const leftEl = document.getElementById('pane-tx');
-  if (leftEl) leftEl.style.display = cfg.left ? 'flex' : 'none';
+  if (leftEl) {
+    leftEl.style.display = cfg.left ? 'flex' : 'none';
+    leftEl.style.flexDirection = 'column';
+    leftEl.style.gap = '8px';
+  }
 
   // Right col panes
   ALL_RIGHT_PANES.forEach(id => {
