@@ -931,6 +931,10 @@ const ALL_RIGHT_PANES = ['pane-metrics','pane-holdings','pane-dividends','pane-p
 
 function setTab(name) {
   if (window.innerWidth > 768) return;
+  
+  // 🌟 新增判斷：檢查是不是真的切換了分頁
+  const isNewTab = (currentTab !== name);
+  
   currentTab = name;
   const cfg = TAB_PANES[name];
 
@@ -955,10 +959,11 @@ function setTab(name) {
     btn.classList.toggle('tab-on', btn.dataset.tab === name)
   );
 
-  // Scroll to top on tab switch
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // 🌟 修改這裡：只有在「真正切換分頁」時，才捲動到最上方
+  if (isNewTab) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 }
-
 function applyResponsiveLayout() {
   if (window.innerWidth > 768) {
     // Desktop: show everything, remove inline styles
