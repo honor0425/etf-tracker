@@ -525,30 +525,53 @@ async function fetchFX() {
 let priceRefreshTimer = null;
 
 async function batchFetchYahoo(etfs) {
-  // 把所有代號組成一個請求：台灣ETF加.TW，美股直接用代號
-  const symbols = etfs.map(e => eCur(e)==='TWD' ? e+'.TW' : e).join(',');
-  for (const base of ['https://query2.finance.yahoo.com','https://query1.finance.yahoo.com']) {
-    try {
-      const r = await Promise.race([
-        fetch(`${base}/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=regularMarketPrice,regularMarketPreviousClose`,
-          {mode:'cors', credentials:'omit'}),
-        new Promise((_,rj)=>setTimeout(()=>rj('timeout'),10000))
-      ]);
-      const d = await r.json();
-      const results = d?.quoteResponse?.result || [];
-      const prices = {};
-      results.forEach(item => {
-        const etf = item.symbol.replace(/\.TW$/i, '');
-        // 優先取即時價，收盤後取昨收價
-        const p = item.regularMarketPrice || item.regularMarketPreviousClose;
-        if (p > 0) prices[etf] = p;
-      });
-      return prices;
-    } catch(_) {}
-  }
-  return {};
-}
+  // 1. 先處理代號：上市用 .TW，上櫃用 .TWO (這裡建議手動維護或預設先用 .TW)
+  // 註：大部分熱門 ETF 如 0050, 0056, 00878 都是 .TW
+  const symbols = etfs.map(e => eCur(e) === 'TWD' ? e + '.TW' : e).join(',');
+  
+  const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=regularMarketPrice,regularMarketPreviousClose`;
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+  
+  const prices = {};
 
+  try {
+    const r = await fetch(proxyUrl);
+    const d = await r.json();
+    const results = d?.quoteResponse?.result || [];
+    
+    results.forEach(item => {
+      const etf = item.symbol.replace(/\.(TW|TWO)$/i, '');
+      const p = item.regularMarketPrice || item.regularMarketPreviousClose;
+      if (p > 0) prices[etf] = p;
+    });
+  } catch (e) {
+    console.warn('Yahoo 報價失敗，準備切換至 TWSE 後備方案');
+  }
+
+  // 3. 後備機制：如果台灣 ETF 沒抓到價格，嘗試抓取 TWSE Open Data
+  const missingTwdEtfs = etfs.filter(e => eCur(e) === 'TWD' && !prices[e]);
+  
+  if (missingTwdEtfs.length > 0) {
+    try {
+      // 呼叫證交所所有上市證券當日報價 (這是一個大檔案，建議作為最後手段)
+      const twseUrl = `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`;
+      const tr = await fetch(twseUrl);
+      const tData = await tr.json();
+      
+      missingTwdEtfs.forEach(etf => {
+        const target = tData.find(item => item.Code === etf);
+        if (target && target.ClosingPrice) {
+          prices[etf] = parseFloat(target.ClosingPrice);
+          console.log(`已從 TWSE 補抓到 ${etf} 價格`);
+        }
+      });
+    } catch (te) {
+      console.error('TWSE 後備方案也失敗', te);
+    }
+  }
+
+  return prices;
+}
 async function fetchAllPrices() {
   const etfs = [...new Set(txs.map(t=>t.etf).filter(Boolean))];
   if (!etfs.length) return;
@@ -649,13 +672,6 @@ function renderHoldings(){
     }).join('');
 }
 
-async function retryPrice(etf) {
-  if(etfPrices[etf]) etfPrices[etf].st='loading';
-  renderHoldings();
-  const p = await fetchPx(etf, eCur(etf));
-  if(p){etfPrices[etf].px=p;etfPrices[etf].st='ok';}else etfPrices[etf].st='failed';
-  renderHoldings();renderMetrics();renderPie();renderLine();
-}
 
 function renderPie(){
   const etfs=[...new Set(txs.map(t=>t.etf))];
@@ -796,21 +812,24 @@ function nextExDate(etf) {
 
 async function fetchDivData(etf, cur) {
   const ticker = cur === 'TWD' ? etf + '.TW' : etf;
-  for (const base of ['https://query2.finance.yahoo.com','https://query1.finance.yahoo.com']) {
-    try {
-      const r = await Promise.race([
-        fetch(`${base}/v8/finance/chart/${ticker}?interval=3mo&range=2y&events=div`,{mode:'cors',credentials:'omit'}),
-        new Promise((_,rj)=>setTimeout(()=>rj('t'),6000))
-      ]);
-      const d = await r.json();
-      const divs = d?.chart?.result?.[0]?.events?.dividends;
-      if (!divs) return null;
-      const entries = Object.values(divs).sort((a,b)=>b.date-a.date);
-      if (!entries.length) return null;
-      return { lastDiv: entries[0].amount, lastDate: new Date(entries[0].date*1000), history: entries.slice(0,8) };
-    } catch(_) {}
+  const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=3mo&range=2y&events=div`;
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+
+  try {
+    const r = await Promise.race([
+      fetch(proxyUrl),
+      new Promise((_, rj) => setTimeout(() => rj('t'), 6000))
+    ]);
+    const d = await r.json();
+    const divs = d?.chart?.result?.[0]?.events?.dividends;
+    if (!divs) return null;
+    const entries = Object.values(divs).sort((a, b) => b.date - a.date);
+    if (!entries.length) return null;
+    return { lastDiv: entries[0].amount, lastDate: new Date(entries[0].date * 1000), history: entries.slice(0, 8) };
+  } catch (e) {
+    console.warn(`${etf} 配息資料取得失敗`, e);
+    return null;
   }
-  return null;
 }
 
 async function fetchAllDivs() {
