@@ -165,9 +165,7 @@ input[type=range]{accent-color:var(--blue)}
   <div class="logo">📈 ETF 投資組合追蹤器</div>
   <div class="header-right">
     <span class="sync-st" id="sync-st"></span>
-    <button class="hbtn" onclick="exportData()"><i class="ti ti-upload"></i> 匯出</button>
-    <button class="hbtn" onclick="openImport()"><i class="ti ti-download"></i> 匯入</button>
-    <button class="hbtn" id="cloud-connect-btn" onclick="switchToGoogleMode()" style="display:none;color:var(--blue)"><i class="ti ti-cloud-upload"></i> 連接 Google</button>
+       <button class="hbtn" id="cloud-connect-btn" onclick="switchToGoogleMode()" style="display:none;color:var(--blue)"><i class="ti ti-cloud-upload"></i> 連接 Google</button>
     <div class="user-chip">
       <div class="user-init" id="user-init">?</div>
       <span id="user-name">…</span>
@@ -292,29 +290,6 @@ input[type=range]{accent-color:var(--blue)}
 </nav>
 </div><!-- /#main-app -->
 
-<!-- 匯出 Modal -->
-<div class="modal-bg" id="export-modal">
-  <div class="modal"><h3>📤 匯出資料</h3>
-    <textarea id="export-text" readonly></textarea>
-    <div class="modal-actions">
-      <button class="btn-xs" onclick="navigator.clipboard.writeText(document.getElementById('export-text').value).then(()=>alert('已複製！'))">複製</button>
-      <button class="btn-xs" onclick="dlExport()"><i class="ti ti-file-download"></i> 下載</button>
-      <button class="btn-xs" onclick="closeM('export-modal')">關閉</button>
-    </div>
-  </div>
-</div>
-
-<!-- 匯入 Modal -->
-<div class="modal-bg" id="import-modal">
-  <div class="modal"><h3>📥 匯入資料</h3>
-    <p style="font-size:13px;color:var(--red);margin-bottom:.75rem">⚠️ 將覆蓋目前所有資料</p>
-    <textarea id="import-text" placeholder="貼上 JSON…"></textarea>
-    <div class="modal-actions">
-      <button class="btn-xs" onclick="closeM('import-modal')">取消</button>
-      <button class="btn-xs" style="background:var(--text);color:var(--surface);border-color:var(--text)" onclick="doImport()">確認匯入</button>
-    </div>
-  </div>
-</div>
 
 <script>
 // ══ Google Auth ════════════════════════════════════════════════════
@@ -937,9 +912,6 @@ async function renderDividends() {
 }
 
 function renderAll(){renderMetrics();renderPie();renderLine();renderTxList();renderHoldings();renderLoanList();renderDividends();renderLastSaved();}
-function dlExport(){const a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(document.getElementById('export-text').value);a.download='etf-portfolio-'+new Date().toISOString().slice(0,10)+'.json';a.click();}
-function openImport(){document.getElementById('import-modal').classList.add('open');}
-function doImport(){try{applyData(JSON.parse(document.getElementById('import-text').value));closeM('import-modal');driveSave();renderAll();refreshAll();}catch(e){alert('格式錯誤');}}
 function closeM(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 
