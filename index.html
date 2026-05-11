@@ -239,9 +239,9 @@ input[type=range]{accent-color:var(--blue)}
     </div>
 
     <div class="panel" id="pane-holdings">
-      <div class="ptitle">持倉與即時報價 <button class="btn-xs" onclick="fetchAllPrices()"><i class="ti ti-refresh"></i> 更新</button></div>
-      <div id="holdings"><p class="empty">新增交易後自動計算</p></div>
-    </div>
+  <div class="ptitle">持倉與即時報價</div>
+  <div id="holdings"><p class="empty">新增交易後自動計算</p></div>
+</div>
 
     <div class="panel" id="pane-dividends">
       <div class="ptitle">
@@ -512,6 +512,32 @@ function renderLastSaved() {
 }
 
 // ══ FX & Price ═════════════════════════════════════════════════════
+
+async function fetchWithProxy(targetUrl) {
+  const proxies = [
+    `https://api.allorigins.win/get?url=`,
+    `https://corsproxy.io/?`
+  ];
+  
+  for (let proxy of proxies) {
+    try {
+      const r = await Promise.race([
+        fetch(proxy + encodeURIComponent(targetUrl)),
+        new Promise((_, rj) => setTimeout(() => rj('timeout'), 5000))
+      ]);
+      
+      if (r.ok) {
+        const data = await r.json();
+        if (data.contents) return JSON.parse(data.contents);
+        return data;
+      }
+    } catch (e) { 
+      continue; 
+    } 
+  }
+  throw new Error('All proxies failed');
+}
+
 async function fetchFX() {
   try {
     const r=await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
@@ -525,51 +551,52 @@ async function fetchFX() {
 let priceRefreshTimer = null;
 
 async function batchFetchYahoo(etfs) {
-  // 1. 先處理代號：上市用 .TW，上櫃用 .TWO (這裡建議手動維護或預設先用 .TW)
-  // 註：大部分熱門 ETF 如 0050, 0056, 00878 都是 .TW
   const symbols = etfs.map(e => eCur(e) === 'TWD' ? e + '.TW' : e).join(',');
-  
   const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=regularMarketPrice,regularMarketPreviousClose`;
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-  
   const prices = {};
 
   try {
-    const r = await fetch(proxyUrl);
-    const d = await r.json();
+    const d = await fetchWithProxy(targetUrl);
     const results = d?.quoteResponse?.result || [];
-    
     results.forEach(item => {
       const etf = item.symbol.replace(/\.(TW|TWO)$/i, '');
       const p = item.regularMarketPrice || item.regularMarketPreviousClose;
       if (p > 0) prices[etf] = p;
     });
   } catch (e) {
-    console.warn('Yahoo 報價失敗，準備切換至 TWSE 後備方案');
+    console.warn('Yahoo 報價受阻，切換至台股官方 API');
   }
 
-  // 3. 後備機制：如果台灣 ETF 沒抓到價格，嘗試抓取 TWSE Open Data
+  // 強化的備援機制：如果 Yahoo 沒抓到台股報價，直接調用證交所與櫃買中心
   const missingTwdEtfs = etfs.filter(e => eCur(e) === 'TWD' && !prices[e]);
-  
   if (missingTwdEtfs.length > 0) {
     try {
-      // 呼叫證交所所有上市證券當日報價 (這是一個大檔案，建議作為最後手段)
-      const twseUrl = `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`;
-      const tr = await fetch(twseUrl);
-      const tData = await tr.json();
-      
+      // 同時拉取「上市」與「上櫃」的今日所有報價
+      const [twseRes, tpexRes] = await Promise.allSettled([
+        fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(r => r.json()),
+        fetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes').then(r => r.json())
+      ]);
+
+      const twseData = twseRes.status === 'fulfilled' ? twseRes.value : [];
+      const tpexData = tpexRes.status === 'fulfilled' ? tpexRes.value : [];
+
       missingTwdEtfs.forEach(etf => {
-        const target = tData.find(item => item.Code === etf);
+        // 先在上市名單找
+        let target = twseData.find(item => item.Code === etf);
         if (target && target.ClosingPrice) {
-          prices[etf] = parseFloat(target.ClosingPrice);
-          console.log(`已從 TWSE 補抓到 ${etf} 價格`);
+           prices[etf] = parseFloat(target.ClosingPrice);
+           return; // 找到了就跳出換下一個
+        }
+        // 如果上市沒有，去上櫃名單找
+        target = tpexData.find(item => item.SecuritiesCompanyCode === etf);
+        if (target && target.Close) {
+           prices[etf] = parseFloat(target.Close);
         }
       });
-    } catch (te) {
-      console.error('TWSE 後備方案也失敗', te);
+    } catch (te) { 
+      console.error('台股後備方案發生錯誤'); 
     }
   }
-
   return prices;
 }
 async function fetchAllPrices() {
