@@ -75,7 +75,8 @@ input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(26,9
 .badge-usd{background:var(--blue-bg);color:var(--blue);font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;font-family:var(--mono)}
 .badge-twd{background:var(--green-bg);color:var(--green);font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;font-family:var(--mono)}
 .tl{max-height:175px;overflow-y:auto}
-.ti{display:flex;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;gap:4px}
+.tx-item{display:flex;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;gap:4px}
+.tx-item:last-child{border-bottom:none}
 .ti:last-child{border-bottom:none}
 .tb{background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:14px;line-height:1}.tb:hover{color:var(--red)}
 .hh{display:grid;grid-template-columns:52px 44px 1fr 1fr 82px;gap:4px;font-size:10px;color:var(--text2);padding:0 0 5px;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
@@ -698,7 +699,7 @@ function renderLine(){
 function renderTxList(){
   const el=document.getElementById('tx-list');
   if(!txs.length){el.innerHTML='<p class="empty">尚無交易紀錄</p>';return;}
-  el.innerHTML=[...txs].sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<div class="ti"><span style="font-family:var(--mono);font-size:10px;color:var(--text2);min-width:68px">${t.date}</span><span style="font-weight:700;min-width:40px">${t.etf||'—'}</span><span class="${t.cur==='USD'?'badge-usd':'badge-twd'}">${t.cur}</span><span style="color:${t.act==='buy'?'var(--green)':'var(--red)'}">${t.act==='buy'?'買':'賣'}</span><span style="font-family:var(--mono);flex:1;text-align:right">${t.units.toLocaleString()}股×${t.cur==='USD'?fmtU(t.priceOrig):t.priceOrig.toFixed(2)}</span><button class="tb" onclick="delTx(${t.id})"><i class="ti ti-trash"></i></button></div>`).join('');
+  el.innerHTML=[...txs].sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<div class="tx-item"><span style="font-family:var(--mono);font-size:10px;color:var(--text2);min-width:68px">${t.date}</span><span style="font-weight:700;min-width:40px">${t.etf||'—'}</span><span class="${t.cur==='USD'?'badge-usd':'badge-twd'}">${t.cur}</span><span style="color:${t.act==='buy'?'var(--green)':'var(--red)'}">${t.act==='buy'?'買':'賣'}</span><span style="font-family:var(--mono);flex:1;text-align:right">${t.units.toLocaleString()}股×${t.cur==='USD'?fmtU(t.priceOrig):t.priceOrig.toFixed(2)}</span><button class="tb" onclick="delTx(${t.id})"><i class="ti ti-trash"></i></button></div>`).join('');
 }
 
 function renderLoanList(){
