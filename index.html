@@ -150,33 +150,12 @@ input[type=range]{accent-color:var(--blue)}
     <div class="auth-title">ETF 投資組合追蹤器</div>
     <div class="auth-sub">登入後資料自動同步至你的 Google 雲端硬碟</div>
 
-    <button class="google-btn" onclick="signIn()" id="signin-btn" style="display:none">
+    <button class="google-btn" onclick="signIn()" id="signin-btn">
       <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.5 33.7 30 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-21 0-1.3-.2-2.7-.5-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16 19.3 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.3 2 9.6 6.4 6.3 14.7z"/><path fill="#FBBC05" d="M24 46c5.5 0 10.5-1.9 14.3-5l-6.6-5.4C29.8 37 27 38 24 38c-5.9 0-10.9-3.9-12.7-9.4l-7 5.4C7.9 42 15.4 46 24 46z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.3-2.2 4.2-4.1 5.6l6.6 5.4C41.5 36.2 45 31 45 24c0-1.3-.2-2.7-.5-4z"/></svg>
       使用 Google 帳號登入
     </button>
     <div class="auth-err" id="auth-err"></div>
-
-    <hr class="auth-divider">
-
-    <div id="setup-section" style="display:none">
-      <div style="font-size:13px;font-weight:600;margin-bottom:.875rem;text-align:left;display:flex;align-items:center;gap:6px"><span>🔧</span> 首次設定：取得 Google Client ID</div>
-      <div class="setup-steps">
-        <ol>
-          <li>前往 <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a> → 建立新專案</li>
-          <li>搜尋並啟用「<strong>Google Drive API</strong>」</li>
-          <li>前往「API 和服務 → 憑證」→ 建立「OAuth 2.0 用戶端 ID」</li>
-          <li>應用程式類型選「<strong>網頁應用程式</strong>」</li>
-          <li>「已授權的 JavaScript 來源」填入你開啟此檔案的網址<br>
-            <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">本機測試：http://localhost:8080 ／ GitHub Pages：https://你的帳號.github.io</span></li>
-          <li>複製「用戶端 ID」貼到下方，按儲存</li>
-        </ol>
-      </div>
-      <div class="cid-row">
-        <input type="text" id="cid-input" placeholder="xxxxxxxx.apps.googleusercontent.com" spellcheck="false" autocomplete="off">
-        <button onclick="saveClientId()">儲存並登入</button>
-      </div>
-      <div class="auth-note">Client ID 只存在你的瀏覽器，不會傳送到任何第三方伺服器。</div>
-    </div>
+    <div class="auth-note" style="margin-top:.75rem">登入後資料自動儲存至你的 Google 雲端硬碟，任何裝置都能同步</div>
   </div>
 </div>
 
@@ -188,6 +167,7 @@ input[type=range]{accent-color:var(--blue)}
     <span class="sync-st" id="sync-st"></span>
     <button class="hbtn" onclick="exportData()"><i class="ti ti-upload"></i> 匯出</button>
     <button class="hbtn" onclick="openImport()"><i class="ti ti-download"></i> 匯入</button>
+    <button class="hbtn" id="cloud-connect-btn" onclick="switchToGoogleMode()" style="display:none;color:var(--blue)"><i class="ti ti-cloud-upload"></i> 連接 Google</button>
     <div class="user-chip">
       <div class="user-init" id="user-init">?</div>
       <span id="user-name">…</span>
@@ -355,31 +335,41 @@ input[type=range]{accent-color:var(--blue)}
 
 <script>
 // ══ Google Auth ════════════════════════════════════════════════════
-let CLIENT_ID = localStorage.getItem('etf-cid') || '';
+let CLIENT_ID = localStorage.getItem('etf-cid') || '221251730516-58dkn8clgfktl4lnt8rorohvsd6gvm0m.apps.googleusercontent.com';
 let tokenClient = null, accessToken = null;
 let driveFileId = localStorage.getItem('etf-fid') || null;
 let autoSaveTimer = null;
 
-function saveClientId() {
-  const v = document.getElementById('cid-input').value.trim();
-  if (!v) return;
-  CLIENT_ID = v;
-  localStorage.setItem('etf-cid', v);
-  initAuth();
-}
-
 function initAuth() {
-  const hasId = !!CLIENT_ID;
-  document.getElementById('setup-section').style.display = hasId ? 'none' : 'block';
-  document.getElementById('signin-btn').style.display = hasId ? 'flex' : 'none';
-  if (!hasId) return;
-  if (document.getElementById('cid-input')) document.getElementById('cid-input').value = CLIENT_ID;
   if (typeof google === 'undefined') { setTimeout(initAuth, 300); return; }
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
     callback: handleToken,
   });
+}
+
+let isLocalMode = false;
+
+function enterLocalMode() {
+  isLocalMode = true;
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('main-app').style.display = 'block';
+  const d = JSON.parse(localStorage.getItem('etf-tracker') || 'null');
+  if (d) applyData(d);
+  document.getElementById('sync-st').innerHTML =
+    '<i class="ti ti-device-laptop" style="font-size:14px;color:var(--text2)"></i> <span style="color:var(--text2)">本機模式</span>';
+  document.getElementById('user-name').textContent = '本機';
+  document.getElementById('user-init').textContent = '💾';
+  document.getElementById('cloud-connect-btn').style.display = 'flex';
+  renderAll(); refreshAll();
+}
+
+function switchToGoogleMode() {
+  // Go back to auth screen to log in with Google
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+  isLocalMode = false;
 }
 
 async function handleToken(resp) {
@@ -416,6 +406,12 @@ function signIn() {
 }
 
 function signOut() {
+  if (isLocalMode) {
+    isLocalMode = false;
+    document.getElementById('main-app').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    return;
+  }
   if (!confirm('確定登出？')) return;
   try { google.accounts.oauth2.revoke(accessToken, ()=>{}); } catch(e) {}
   accessToken = null;
@@ -485,7 +481,7 @@ function pickData(src) {
 }
 
 async function driveSave() {
-  if (!accessToken) return;
+  if (!accessToken || isLocalMode) return;
   setSyncSt('load','同步中…');
   const body = JSON.stringify(getPayload());
   try {
