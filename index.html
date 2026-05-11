@@ -542,37 +542,43 @@ async function fetchWithProxy(targetUrl) {
 }
 async function fetchFX() {
   try {
-    const r=await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
-    const d=await r.json(); usdTwd=d.usd.twd; rateDate=d.date;
-    document.getElementById('fx-val').textContent='1 USD = '+usdTwd.toFixed(2)+' TWD';
-    document.getElementById('fx-date').textContent='（'+rateDate+'）';
-  } catch(e) { document.getElementById('fx-val').textContent='1 USD ≈ '+usdTwd.toFixed(2)+' TWD'; }
+    const r = await Promise.race([
+      fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json'),
+      new Promise((_, rj) => setTimeout(() => rj('t'), 4000)) // 4秒超時自動放棄
+    ]);
+    const d = await r.json(); usdTwd = d.usd.twd; rateDate = d.date;
+    document.getElementById('fx-val').textContent = '1 USD = ' + usdTwd.toFixed(2) + ' TWD';
+    document.getElementById('fx-date').textContent = '（' + rateDate + '）';
+  } catch(e) { 
+    document.getElementById('fx-val').textContent = '1 USD ≈ ' + usdTwd.toFixed(2) + ' TWD'; 
+  }
 }
-
-// ══ 即時報價（Yahoo Finance 批次 API）══════════════════════════════
+// ══ 即時報價與自動更新 ══════════════════════════════
 let priceRefreshTimer = null;
 // 2. 報價更新：為台股備援 API 也加上 Timeout，避免證交所當機導致卡死
 async function batchFetchYahoo(etfs) {
-  const symbols = etfs.map(e => eCur(e) === 'TWD' ? e + '.TW' : e).join(',');
-  const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=regularMarketPrice,regularMarketPreviousClose`;
   const prices = {};
 
-  try {
-    const d = await fetchWithProxy(targetUrl);
-    const results = d?.quoteResponse?.result || [];
-    results.forEach(item => {
-      const etf = item.symbol.replace(/\.(TW|TWO)$/i, '');
-      const p = item.regularMarketPrice || item.regularMarketPreviousClose;
-      if (p > 0) prices[etf] = p;
-    });
-  } catch (e) {
-    console.warn('Yahoo 報價受阻，切換至台股官方 API');
-  }
+  // 策略：不使用容易被擋的 quote API，改用確定會通的 chart API 獨立抓取
+  await Promise.all(etfs.map(async (e) => {
+    const ticker = eCur(e) === 'TWD' ? e + '.TW' : e;
+    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    
+    try {
+      const d = await fetchWithProxy(targetUrl);
+      // 從 chart API 中精準萃取最新報價
+      const meta = d?.chart?.result?.[0]?.meta;
+      const p = meta?.regularMarketPrice || meta?.previousClose || meta?.chartPreviousClose;
+      if (p > 0) prices[e] = p;
+    } catch (err) {
+      // 單支失敗就靜默跳過，交給後面的台股備援處理
+    }
+  }));
 
+  // 台股官方備援機制 (維持原樣)
   const missingTwdEtfs = etfs.filter(e => eCur(e) === 'TWD' && !prices[e]);
   if (missingTwdEtfs.length > 0) {
     try {
-      // 幫台股備援也加上 6 秒超時機制
       const fetchWithTimeout = (url) => Promise.race([
         fetch(url).then(r => r.json()),
         new Promise((_, rj) => setTimeout(() => rj('t'), 6000))
