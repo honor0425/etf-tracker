@@ -17,12 +17,6 @@
   --radius:10px; --radius-sm:6px; --shadow:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.05);
   --font:'Segoe UI',system-ui,-apple-system,sans-serif; --mono:'SF Mono','Fira Code','Consolas',monospace;
 }
-@media(prefers-color-scheme:dark){:root{
-  --bg:#141414; --surface:#1e1e1e; --surface2:#272727; --border:rgba(255,255,255,.1); --border2:rgba(255,255,255,.18);
-  --text:#e8e6e1; --text2:#999790; --text3:#666460;
-  --green:#3dba8a; --green-bg:#0e2d20; --red:#e06c6c; --red-bg:#2d1414;
-  --blue:#6aabf7; --blue-bg:#0d2040; --amber:#f0b866; --amber-bg:#2a1e08;
-}}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100vh}
 /* Auth */
@@ -70,7 +64,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
 .fl{font-size:11px;color:var(--text2);display:block;margin-bottom:2px;font-weight:500}
-input,select{width:100%;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:13px;font-family:var(--font);outline:none;transition:border-color .15s,box-shadow .15s}
+input,select{width:100%;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:13px;font-family:var(--font);outline:none;transition:border-color .15s,box-shadow .15s;height:36px;-webkit-appearance:none;appearance:none}
+input[type=range]{height:auto;-webkit-appearance:auto;appearance:auto}
 input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(26,95,168,.12)}
 .btn{padding:8px 14px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:13px;font-family:var(--font);cursor:pointer;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s}
 .btn:hover{background:var(--surface2)}
@@ -525,73 +520,70 @@ async function fetchFX() {
   } catch(e) { document.getElementById('fx-val').textContent='1 USD ≈ '+usdTwd.toFixed(2)+' TWD'; }
 }
 
-// 台灣 ETF 市場別 (tse=上市 / otc=上櫃)
-const TW_MARKET = {
-  '0050':'tse','0056':'tse','006208':'tse','00692':'tse','00713':'tse',
-  '00850':'tse','00881':'tse','00900':'otc','00878':'otc',
-  '00929':'otc','00930':'otc','00934':'otc','00936':'otc',
-};
-
-async function fetchTWSEPrice(ticker) {
-  const market = TW_MARKET[ticker] || 'tse';
-  try {
-    const r = await Promise.race([
-      fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${market}_${ticker}.tw&json=1&delay=0`),
-      new Promise((_,rj)=>setTimeout(()=>rj('t'),5000))
-    ]);
-    const d = await r.json();
-    const price = parseFloat(d?.msgArray?.[0]?.z);
-    if (price > 0) return price;
-    const prev = parseFloat(d?.msgArray?.[0]?.y); // 收盤後取昨收
-    if (prev > 0) return prev;
-  } catch(_) {}
-  return null;
-}
-
-async function fetchYahooPrice(sym) {
-  for (const b of ['https://query2.finance.yahoo.com','https://query1.finance.yahoo.com']) {
-    try {
-      const r = await Promise.race([
-        fetch(`${b}/v8/finance/chart/${sym}?interval=1d&range=1d`,{mode:'cors',credentials:'omit'}),
-        new Promise((_,rj)=>setTimeout(()=>rj('t'),7000))
-      ]);
-      const d = await r.json();
-      const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (p && p>0) return p;
-    } catch(_) {}
-  }
-  return null;
-}
-
-async function fetchPx(etf, cur) {
-  if (cur === 'TWD') {
-    const p = await fetchTWSEPrice(etf);
-    if (p) return p;
-    return await fetchYahooPrice(etf+'.TW'); // fallback
-  }
-  return await fetchYahooPrice(etf);
-}
-
+// ══ 即時報價（Yahoo Finance 批次 API）══════════════════════════════
 let priceRefreshTimer = null;
 
+async function batchFetchYahoo(etfs) {
+  // 把所有代號組成一個請求：台灣ETF加.TW，美股直接用代號
+  const symbols = etfs.map(e => eCur(e)==='TWD' ? e+'.TW' : e).join(',');
+  for (const base of ['https://query2.finance.yahoo.com','https://query1.finance.yahoo.com']) {
+    try {
+      const r = await Promise.race([
+        fetch(`${base}/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=regularMarketPrice,regularMarketPreviousClose`,
+          {mode:'cors', credentials:'omit'}),
+        new Promise((_,rj)=>setTimeout(()=>rj('timeout'),10000))
+      ]);
+      const d = await r.json();
+      const results = d?.quoteResponse?.result || [];
+      const prices = {};
+      results.forEach(item => {
+        const etf = item.symbol.replace(/\.TW$/i, '');
+        // 優先取即時價，收盤後取昨收價
+        const p = item.regularMarketPrice || item.regularMarketPreviousClose;
+        if (p > 0) prices[etf] = p;
+      });
+      return prices;
+    } catch(_) {}
+  }
+  return {};
+}
+
 async function fetchAllPrices() {
-async function fetchAllPrices() {
-  const etfs=[...new Set(txs.map(t=>t.etf))]; if(!etfs.length)return;
-  etfs.forEach(e=>{ if(!etfPrices[e])etfPrices[e]={px:0,cur:eCur(e),st:'loading'}; else etfPrices[e].st='loading'; });
-  renderHoldings(); document.getElementById('fetch-st').textContent='報價更新中…';
-  let ok=0;
-  await Promise.all(etfs.map(async e=>{
-    const p=await fetchPx(e,eCur(e));
-    if(p){etfPrices[e].px=p;etfPrices[e].st='ok';ok++;}else etfPrices[e].st='failed';
-    renderHoldings();renderMetrics();renderPie();renderLine();
-  }));
-  const now=new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
-  document.getElementById('fetch-st').textContent=`已更新 ${ok}/${etfs.length} 支（${now}）`;
-  // 啟動自動刷新（每5分鐘）
+  const etfs = [...new Set(txs.map(t=>t.etf).filter(Boolean))];
+  if (!etfs.length) return;
+  etfs.forEach(e => {
+    if (!etfPrices[e]) etfPrices[e] = {px:0, cur:eCur(e), st:'loading'};
+    else etfPrices[e].st = 'loading';
+  });
+  renderHoldings();
+  document.getElementById('fetch-st').textContent = '報價更新中…';
+
+  const results = await batchFetchYahoo(etfs);
+  let ok = 0;
+  etfs.forEach(e => {
+    if (results[e]) { etfPrices[e].px = results[e]; etfPrices[e].st = 'ok'; ok++; }
+    else etfPrices[e].st = 'failed';
+  });
+  renderHoldings(); renderMetrics(); renderPie(); renderLine();
+
+  const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('fetch-st').textContent =
+    `${ok}/${etfs.length} 支報價已更新（${now}）` + (ok < etfs.length ? ' — 失敗的可點「重試」' : '');
+
   clearInterval(priceRefreshTimer);
   priceRefreshTimer = setInterval(fetchAllPrices, 5*60*1000);
 }
+
+async function retryPrice(etf) {
+  if (etfPrices[etf]) etfPrices[etf].st = 'loading';
+  renderHoldings();
+  const results = await batchFetchYahoo([etf]);
+  if (results[etf]) { etfPrices[etf].px = results[etf]; etfPrices[etf].st = 'ok'; }
+  else etfPrices[etf].st = 'failed';
+  renderHoldings(); renderMetrics(); renderPie(); renderLine();
 }
+
+
 
 async function refreshAll() {
   const btn=document.getElementById('refresh-btn'),icon=document.getElementById('ri');
@@ -706,7 +698,7 @@ function renderLine(){
 function renderTxList(){
   const el=document.getElementById('tx-list');
   if(!txs.length){el.innerHTML='<p class="empty">尚無交易紀錄</p>';return;}
-  el.innerHTML=[...txs].sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<div class="ti"><span style="font-family:var(--mono);font-size:10px;color:var(--text2);min-width:68px">${t.date}</span><span style="font-weight:700;min-width:40px">${t.etf}</span><span class="${t.cur==='USD'?'badge-usd':'badge-twd'}">${t.cur}</span><span style="color:${t.act==='buy'?'var(--green)':'var(--red)'}">${t.act==='buy'?'買':'賣'}</span><span style="font-family:var(--mono);flex:1;text-align:right">${t.units.toLocaleString()}股×${t.cur==='USD'?fmtU(t.priceOrig):t.priceOrig.toFixed(2)}</span><button class="tb" onclick="delTx(${t.id})"><i class="ti ti-trash"></i></button></div>`).join('');
+  el.innerHTML=[...txs].sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<div class="ti"><span style="font-family:var(--mono);font-size:10px;color:var(--text2);min-width:68px">${t.date}</span><span style="font-weight:700;min-width:40px">${t.etf||'—'}</span><span class="${t.cur==='USD'?'badge-usd':'badge-twd'}">${t.cur}</span><span style="color:${t.act==='buy'?'var(--green)':'var(--red)'}">${t.act==='buy'?'買':'賣'}</span><span style="font-family:var(--mono);flex:1;text-align:right">${t.units.toLocaleString()}股×${t.cur==='USD'?fmtU(t.priceOrig):t.priceOrig.toFixed(2)}</span><button class="tb" onclick="delTx(${t.id})"><i class="ti ti-trash"></i></button></div>`).join('');
 }
 
 function renderLoanList(){
@@ -715,7 +707,7 @@ function renderLoanList(){
   el.innerHTML=loans.map(ln=>`<div class="lrow"><span style="font-size:11px;color:var(--text2);font-family:var(--mono)">${ln.s}</span><span style="font-weight:600">本金 ${fmtN(ln.principal)}</span><span style="color:var(--text2)">月息 ${fmtN(ln.m)}</span><span style="color:var(--text2);font-size:11px">至 ${ln.e||'—'}</span><button class="tb" onclick="delLoan(${ln.id})"><i class="ti ti-trash"></i></button></div>`).join('');
 }
 
-function renderAll(){renderMetrics();renderPie();renderLine();renderTxList();renderHoldings();renderLoanList();renderLastSaved();}
+function renderAll(){renderMetrics();renderPie();renderLine();renderTxList();renderHoldings();renderLoanList();renderDividends();renderLastSaved();}
 
 function onFC(){
   const cur=document.getElementById('tx-cur').value;
@@ -736,7 +728,10 @@ function addTx(){
   ['tx-etf','tx-units','tx-price'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('tx-preview').style.display='none';
   saveLocal();renderAll();
-  fetchPx(e,cur).then(p=>{if(p){etfPrices[e].px=p;etfPrices[e].st='ok';}else etfPrices[e].st='failed';renderHoldings();});
+  batchFetchYahoo([e]).then(res=>{
+    if(res[e]){etfPrices[e].px=res[e];etfPrices[e].st='ok';}else etfPrices[e].st='failed';
+    renderHoldings();renderMetrics();renderPie();renderLine();
+  });
   if(!divCache[e]) fetchDivData(e,cur).then(d=>{if(d){divCache[e]=d;renderDividends();}});
 }
 
