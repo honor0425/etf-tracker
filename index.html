@@ -1107,18 +1107,23 @@ function applyResponsiveLayout() {
 
 window.addEventListener('resize', applyResponsiveLayout);
 document.getElementById('tx-date').value=new Date().toISOString().slice(0,10);
-document.getElementById('r-slider').addEventListener('input',function()
 // 處理年數拉桿的變動
 document.getElementById('y-slider').addEventListener('input', function() {
   document.getElementById('y-disp').textContent = this.value + '年';
   renderLine(); 
 });
-{projRate=parseFloat(this.value)/100;document.getElementById('r-disp').textContent=parseFloat(this.value).toFixed(1)+'%';renderLine();});
 
-window.addEventListener('load',()=>{
-  const waitGSI=setInterval(()=>{
-    if(typeof google!=='undefined'){clearInterval(waitGSI);initAuth();}
-  },200);
+// 處理報酬率拉桿的變動
+document.getElementById('r-slider').addEventListener('input', function() {
+  projRate = parseFloat(this.value) / 100;
+  document.getElementById('r-disp').textContent = parseFloat(this.value).toFixed(1) + '%';
+  renderLine();
+});
+
+window.addEventListener('load', () => {
+  const waitGSI = setInterval(() => {
+    if (typeof google !== 'undefined') { clearInterval(waitGSI); initAuth(); }
+  }, 200);
   applyResponsiveLayout();
 });
 </script>
