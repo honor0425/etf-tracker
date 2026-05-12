@@ -789,51 +789,103 @@ function calcMetrics(){
   const own=ownFunds(today);
   const etfs=[...new Set(txs.map(t=>t.etf))];
   const curVal=etfs.reduce((s,e)=>s+mvTwd(e),0);
+  
   const buyT=txs.filter(t=>t.act==='buy').reduce((s,t)=>s+toTwd(t.units*t.priceOrig,t.cur),0);
   const sellT=txs.filter(t=>t.act==='sell').reduce((s,t)=>s+toTwd(t.units*t.priceOrig,t.cur),0);
-  
+  const netBuy = Math.max(0, buyT - sellT);
+
   let flows=[];
+  let totalLoan = 0; 
+  let totalInterest = 0; 
+
   txs.forEach(t=>flows.push({date:t.date,amt:toTwd((t.act==='buy'?-1:1)*t.units*t.priceOrig,t.cur)}));
-  
-  let totalLoan = 0; //  新增：用來統計欠銀行的總本金
+
   loans.forEach(ln=>{
     if(ln.principal&&ln.s){
-      flows.push({date:ln.s,amt:+ln.principal});
-      totalLoan += +ln.principal; // 累加未還本金
+      flows.push({date:ln.s, amt:+ln.principal, isLoan:true}); 
+      totalLoan += +ln.principal;
     }
     if(ln.m&&ln.s&&ln.e){
       let d=new Date(ln.s),end=new Date(Math.min(new Date(ln.e),new Date()));
       while(d<=end){
         flows.push({date:d.toISOString().slice(0,10),amt:-ln.m});
+        totalInterest += +ln.m;
         d=new Date(d.getFullYear(),d.getMonth()+1,d.getDate());
       }
     }
   });
   
-  //  修正：期末結算時，手上的總市值必須扣除「要還給銀行的本金」
-  const netTerminalValue = curVal - totalLoan;
+  // 自動剃除「借了但還沒買股票」的閒置資金，避免 XIRR 公式崩潰
+  let excessLoan = Math.max(0, totalLoan - netBuy);
+  if (excessLoan > 0 && totalLoan > 0) {
+    let remaining = excessLoan;
+    flows.forEach(f => {
+      if (f.isLoan && remaining > 0) {
+        let deduct = Math.min(f.amt, remaining);
+        f.amt -= deduct;
+        remaining -= deduct;
+      }
+    });
+  }
+
+  // 期末結算：扣除有效貸款本金
+  const effectiveLoanForXirr = totalLoan - excessLoan;
+  const xirrTerminalValue = curVal - effectiveLoanForXirr;
   
-  // 只要手上有股票或還有欠款，就加入這筆淨結算現金流
-  if(curVal>0 || totalLoan>0) flows.push({date:today,amt:netTerminalValue});
+  if(curVal>0 || effectiveLoanForXirr>0) {
+     flows.push({date:today, amt:xirrTerminalValue});
+  }
   
   flows.sort((a,b)=>a.date.localeCompare(b.date));
   let xi=null;
-  // 必須要有兩筆以上現金流才能算 XIRR
   if(flows.length>=2){try{xi=xirr(flows.map(f=>f.amt),flows.map(f=>f.date));}catch(e){}}
   
-  return{own,curVal,xi,unreal:curVal-(buyT-sellT)};
+  return{own,curVal,xi,unreal:curVal-(buyT-sellT),totalLoan,totalInterest};
 }
-
 function renderMetrics(){
   const m=calcMetrics();
   document.getElementById('m-inv').textContent=fmtN(m.own);
-  document.getElementById('m-cur').textContent=m.curVal>0?fmtN(m.curVal):'—';
+  
+  const mc = document.getElementById('m-cur');
+  mc.textContent=m.curVal>0?fmtN(m.curVal):'—';
+  let navEl = document.getElementById('m-nav-sub');
+  if(!navEl) {
+    navEl = document.createElement('div');
+    navEl.id = 'm-nav-sub';
+    navEl.style.cssText = 'font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4;border-top:1px dashed var(--border);padding-top:4px';
+    mc.parentNode.appendChild(navEl);
+  }
+  if(m.totalLoan > 0) {
+    const nav = m.curVal - m.totalLoan;
+    navEl.innerHTML = `未還貸款: <span style="color:var(--text);font-family:var(--mono)">${fmtN(m.totalLoan)}</span><br>真實淨值: <span style="color:${nav>=0?'var(--green)':'var(--red)'};font-weight:700;font-family:var(--mono)">${fmtN(nav)}</span>`;
+  } else {
+    navEl.innerHTML = '';
+    navEl.style.paddingTop = '0';
+    navEl.style.borderTop = 'none';
+  }
+
   const xe=document.getElementById('m-xirr');
   if(m.xi!==null&&isFinite(m.xi)){xe.textContent=(m.xi*100).toFixed(1)+'%';xe.className='mv '+(m.xi>=0?'pos':'neg');}else{xe.textContent='—';xe.className='mv';}
+  
   const pe=document.getElementById('m-pnl');
   if(m.curVal>0){pe.textContent=(m.unreal>=0?'+':'')+fmtN(m.unreal);pe.className='mv '+(m.unreal>=0?'pos':'neg');}else{pe.textContent='—';pe.className='mv';}
+  
+  let intEl = document.getElementById('m-pnl-sub');
+  if(!intEl) {
+    intEl = document.createElement('div');
+    intEl.id = 'm-pnl-sub';
+    intEl.style.cssText = 'font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4;border-top:1px dashed var(--border);padding-top:4px';
+    pe.parentNode.appendChild(intEl);
+  }
+  if(m.totalInterest > 0) {
+    const netPnL = m.unreal - m.totalInterest;
+    intEl.innerHTML = `累計利息: <span style="color:var(--red);font-family:var(--mono)">-${fmtN(m.totalInterest)}</span><br>總淨損益: <span style="color:${netPnL>=0?'var(--green)':'var(--red)'};font-weight:700;font-family:var(--mono)">${fmtN(netPnL)}</span>`;
+  } else {
+    intEl.innerHTML = '';
+    intEl.style.paddingTop = '0';
+    intEl.style.borderTop = 'none';
+  }
 }
-
 function renderHoldings(){
   const etfs=[...new Set(txs.map(t=>t.etf))];
   const el=document.getElementById('holdings');
