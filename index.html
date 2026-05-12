@@ -302,24 +302,35 @@ input[type=range]{accent-color:var(--blue)}
 
 
 <script>
+
 // ══ 動態生成手機主畫面圖示 ══════════════════════════════════════
 (function generateAppIcon() {
   const canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 512;
   const ctx = canvas.getContext('2d');
   
-  // 1. 畫實體背景色（這裡設定為底色 #f7f7f5，你也可以改成 #ffffff 白色）
-  ctx.fillStyle = '#f7f7f5';
+  // 1. 填滿滿版底色（採用與介面相符的專業藍色）
+  ctx.fillStyle = '#1a5fa8';
   ctx.fillRect(0, 0, 512, 512);
   
-  // 2. 畫上超大尺寸的 Emoji 以填滿邊緣
-  ctx.font = '380px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  // 稍微將 Y 軸下移至 280 讓圖示在正中央
-  ctx.fillText('📈', 256, 280); 
+  // 2. 用程式碼繪製白色的向量折線，確保沒有任何多餘邊框
+  ctx.beginPath();
+  ctx.moveTo(90, 380);
+  ctx.lineTo(220, 260);
+  ctx.lineTo(310, 310);
+  ctx.lineTo(430, 140);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 45;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
   
-  // 3. 將畫好的圖片轉換為手機可讀取的格式並塞入網頁
+  // 3. 在折線頂端加上圓點裝飾
+  ctx.beginPath();
+  ctx.arc(430, 140, 22, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  
   const iconDataUrl = canvas.toDataURL('image/png');
   
   const appleLink = document.createElement('link');
@@ -332,7 +343,6 @@ input[type=range]{accent-color:var(--blue)}
   androidLink.href = iconDataUrl;
   document.head.appendChild(androidLink);
 })();
-
 // ══ Google Auth ════════════════════════════════════════════════════
 let CLIENT_ID = localStorage.getItem('etf-cid') || '221251730516-58dkn8clgfktl4lnt8rorohvsd6gvm0m.apps.googleusercontent.com';
 let tokenClient = null, accessToken = null;
