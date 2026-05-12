@@ -178,6 +178,7 @@ input[type=range]{accent-color:var(--blue)}
     overflow-y: auto; 
     -webkit-overflow-scrolling: touch; 
     padding-bottom: calc(95px + env(safe-area-inset-bottom)); 
+    display: block; /*  加上這行：解除 iOS 網格捲動卡死的 Bug */
   }
 
   /* 3. 優化底部導覽列（這就是你問要不要留的這段，要留著！） */
