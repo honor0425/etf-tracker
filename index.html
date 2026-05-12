@@ -158,37 +158,47 @@ input[type=range]{accent-color:var(--blue)}
 /* ── 手機版 Tab Bar ─────────────────────────────── */
 .mobile-tabbar{display:none}
 @media(max-width:768px){
- /* 1. 修正主容器高度，使用 dvh 讓它永遠等於「扣除網址列後」的真實可見高度 */
-  body {
-    min-height: 100dvh;
+  /* 1. 鎖死整個網頁的預設拉扯滑動，變成原生 App 模式 */
+  body, html {
+    height: 100dvh;
+    overflow: hidden; 
   }
   
   #main-app {
-    /* 增加底部間距，確保內容不會被導覽列擋住 */
-    padding-bottom: calc(85px + env(safe-area-inset-bottom));
-    min-height: 100dvh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
-  } 
-/* 2. 優化底部導覽列，修正被網址列蓋住的問題 */
+    overflow: hidden;
+    padding-bottom: 0 !important; 
+  }
+
+  /* 2. 讓中間的內容區塊變成「獨立可捲動」 */
+  .main {
+    flex: 1; 
+    overflow-y: auto; 
+    -webkit-overflow-scrolling: touch; 
+    padding-bottom: calc(95px + env(safe-area-inset-bottom)); 
+  }
+
+  /* 3. 優化底部導覽列（這就是你問要不要留的這段，要留著！） */
   .mobile-tabbar {
     display: flex;
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    /* 自動調整高度以包含安全區域 */
     height: auto;
     min-height: 65px;
     padding-bottom: calc(env(safe-area-inset-bottom) + 5px); 
-    
     background: rgba(255, 255, 255, 0.88);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid rgba(0, 0, 0, 0.05);
-    z-index: 200; /* 確保在最上層 */
+    z-index: 200; 
     box-shadow: 0 -2px 10px rgba(0,0,0,0.03);
   }
+
+  /* 4. 標籤按鈕比例與動畫 */
   .tab-btn {
     flex: 1;
     padding: 8px 0;
@@ -197,16 +207,19 @@ input[type=range]{accent-color:var(--blue)}
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text3);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all .2s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .tab-btn i{font-size:22px;transition:transform .2s}
-  /* 激活狀態高光 */
-  .tab-btn.tab-on{color:var(--blue)}
-  .tab-btn.tab-on i{transform:translateY(-2px);filter:drop-shadow(0 2px 4px rgba(37,99,235,0.3))}
-  #main-app{padding-bottom:58px}
-  .main{grid-template-columns:1fr;padding:8px;gap:8px}
-  .header{padding:0 12px}
-  .header-right .hbtn:not(:last-child){display:none}
-  .top-bar{padding:4px 12px;gap:8px;font-size:11px}
+  .tab-btn i { font-size: 22px; transition: transform .2s; }
+  .tab-btn.tab-on { color: var(--blue); }
+  .tab-btn.tab-on i { transform: translateY(-2px); filter: drop-shadow(0 2px 4px rgba(37,99,235,0.3)); } 
   #pane-tx{display:none;flex-direction:column;gap:8px}
   #pane-right{display:flex;flex-direction:column;gap:8px}
   #pane-metrics,#pane-holdings,#pane-dividends,#pane-pie,#pane-line{display:none}
