@@ -175,6 +175,7 @@ input[type=range]{accent-color:var(--blue)}
   /* 2. 讓中間的內容區塊變成「獨立可捲動」 */
   .main {
     flex: 1; 
+    min-height: 0; /*  關鍵修正：強迫觸發內部捲動條 */
     overflow-y: auto; 
     -webkit-overflow-scrolling: touch; 
     padding-bottom: calc(95px + env(safe-area-inset-bottom)); 
