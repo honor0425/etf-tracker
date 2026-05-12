@@ -274,7 +274,12 @@ input[type=range]{accent-color:var(--blue)}
         <span><span class="ld" style="background:#BA7517;border-radius:50%"></span>目前市值</span>
       </div>
       <div style="position:relative;width:100%;height:260px"><canvas id="lineC" role="img" aria-label="資產累積曲線">資產累積曲線</canvas></div>
-      <div class="srow">
+     <div class="srow">
+        <span class="sl">預測未來年數</span>
+        <input type="range" id="y-slider" min="1" max="40" value="10" step="1" style="flex:1">
+        <span class="sv" id="y-disp">10年</span>
+      </div> 
+     <div class="srow">
         <span class="sl">年化報酬率預測</span>
         <input type="range" id="r-slider" min="0" max="50" value="8" step="0.5" style="flex:1">
         <span class="sv" id="r-disp">8.0%</span>
@@ -746,8 +751,9 @@ function genLine() {
   const start = new Date(sorted[0].date);
   const today = new Date();
   
-  // 🌟 將預測時間從 3 年拉長到 10 年，讓複利曲線更明顯
-  const end = new Date(today.getFullYear() + 10, today.getMonth(), 1);
+  // 這裡的 getFullYear() 會自動抓當下時間，永遠往未來的 10 年推算，永遠不會過期
+  const projYears = parseInt(document.getElementById('y-slider').value) || 10;
+  const end = new Date(today.getFullYear() + projYears, today.getMonth(), 1);
 
   const labels = [], own = [], proj = [], future = [];
   const etfs = [...new Set(txs.map(t => t.etf))];
@@ -763,8 +769,14 @@ function genLine() {
     labels.push(ym);
     if (ym === tYM) todayI = i;
 
-    // 1. 投入本金 (超過今天的時間點，假設本金不再增加，維持水平)
-    own.push(d <= today ? ownFunds(ds) : ownFunds(today.toISOString().slice(0, 10)));
+    // 1. 投入本金 (🌟 修改：未來時間點填入 null，讓藍色區塊完美切斷在今天)
+    if (d < new Date(today.getFullYear(), today.getMonth(), 1)) {
+      own.push(ownFunds(ds));
+    } else if (ym === tYM) {
+      own.push(ownFunds(today.toISOString().slice(0, 10)));
+    } else {
+      own.push(null); 
+    }
 
     // 2. 從第一天開始算的純理論報酬
     let pv = 0;
@@ -775,11 +787,11 @@ function genLine() {
     loans.forEach(ln => { if (ln.s <= ds) pv -= ln.principal || 0; });
     proj.push(Math.max(0, pv));
 
-    // 3. 🌟 新增：從「今天實際市值」出發的未來推估曲線
+    // 3. 從「今天實際市值」出發的未來推估曲線
     if (d < new Date(today.getFullYear(), today.getMonth(), 1)) {
-      future.push(null); // 過去的時間不畫這條線
+      future.push(null);
     } else if (ym === tYM) {
-      future.push(curVal); // 完美接上今天的實際市值
+      future.push(curVal);
     } else {
       const yrs = (d - today) / (365.25 * 86400000);
       future.push(curVal * Math.pow(1 + projRate, Math.max(0, yrs)));
@@ -1095,7 +1107,13 @@ function applyResponsiveLayout() {
 
 window.addEventListener('resize', applyResponsiveLayout);
 document.getElementById('tx-date').value=new Date().toISOString().slice(0,10);
-document.getElementById('r-slider').addEventListener('input',function(){projRate=parseFloat(this.value)/100;document.getElementById('r-disp').textContent=parseFloat(this.value).toFixed(1)+'%';renderLine();});
+document.getElementById('r-slider').addEventListener('input',function()
+// 處理年數拉桿的變動
+document.getElementById('y-slider').addEventListener('input', function() {
+  document.getElementById('y-disp').textContent = this.value + '年';
+  renderLine(); 
+});
+{projRate=parseFloat(this.value)/100;document.getElementById('r-disp').textContent=parseFloat(this.value).toFixed(1)+'%';renderLine();});
 
 window.addEventListener('load',()=>{
   const waitGSI=setInterval(()=>{
