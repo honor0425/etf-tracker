@@ -791,12 +791,36 @@ function calcMetrics(){
   const curVal=etfs.reduce((s,e)=>s+mvTwd(e),0);
   const buyT=txs.filter(t=>t.act==='buy').reduce((s,t)=>s+toTwd(t.units*t.priceOrig,t.cur),0);
   const sellT=txs.filter(t=>t.act==='sell').reduce((s,t)=>s+toTwd(t.units*t.priceOrig,t.cur),0);
+  
   let flows=[];
   txs.forEach(t=>flows.push({date:t.date,amt:toTwd((t.act==='buy'?-1:1)*t.units*t.priceOrig,t.cur)}));
-  loans.forEach(ln=>{if(ln.principal&&ln.s)flows.push({date:ln.s,amt:+ln.principal});if(ln.m&&ln.s&&ln.e){let d=new Date(ln.s),end=new Date(Math.min(new Date(ln.e),new Date()));while(d<=end){flows.push({date:d.toISOString().slice(0,10),amt:-ln.m});d=new Date(d.getFullYear(),d.getMonth()+1,d.getDate());}}});
-  if(curVal>0)flows.push({date:today,amt:curVal});
+  
+  let totalLoan = 0; //  新增：用來統計欠銀行的總本金
+  loans.forEach(ln=>{
+    if(ln.principal&&ln.s){
+      flows.push({date:ln.s,amt:+ln.principal});
+      totalLoan += +ln.principal; // 累加未還本金
+    }
+    if(ln.m&&ln.s&&ln.e){
+      let d=new Date(ln.s),end=new Date(Math.min(new Date(ln.e),new Date()));
+      while(d<=end){
+        flows.push({date:d.toISOString().slice(0,10),amt:-ln.m});
+        d=new Date(d.getFullYear(),d.getMonth()+1,d.getDate());
+      }
+    }
+  });
+  
+  //  修正：期末結算時，手上的總市值必須扣除「要還給銀行的本金」
+  const netTerminalValue = curVal - totalLoan;
+  
+  // 只要手上有股票或還有欠款，就加入這筆淨結算現金流
+  if(curVal>0 || totalLoan>0) flows.push({date:today,amt:netTerminalValue});
+  
   flows.sort((a,b)=>a.date.localeCompare(b.date));
-  let xi=null;if(flows.length>=2&&curVal>0){try{xi=xirr(flows.map(f=>f.amt),flows.map(f=>f.date));}catch(e){}}
+  let xi=null;
+  // 必須要有兩筆以上現金流才能算 XIRR
+  if(flows.length>=2){try{xi=xirr(flows.map(f=>f.amt),flows.map(f=>f.date));}catch(e){}}
+  
   return{own,curVal,xi,unreal:curVal-(buyT-sellT)};
 }
 
