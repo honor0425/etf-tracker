@@ -286,7 +286,7 @@ input[type=range]{accent-color:var(--blue)}
         <div class="fr3">
           <div><label class="fl">日期</label><input type="date" id="tx-date"></div>
           <div><label class="fl">操作</label><select id="tx-act"><option value="buy">買進</option><option value="sell">賣出</option></select></div>
-          <div><label class="fl">幣別</label><select id="tx-cur" onchange="onFC()"><option value="TWD">🇹🇼 TWD</option><option value="USD">🇺🇸 USD</option></select></div>
+          <div><label class="fl">幣別</label><select id="tx-cur" onchange="onFC()"><option value="TWD">TWD</option><option value="USD">USD</option></select></div>
         </div>
         <div class="fr">
           <div><label class="fl">ETF 代號</label><input type="text" id="tx-etf" placeholder="0050 / VOO"></div>
@@ -843,14 +843,13 @@ function calcMetrics(){
   return{own,curVal,xi,unreal:curVal-(buyT-sellT),totalLoan,totalInterest};
 }
 function renderMetrics(){
-  const m=calcMetrics();
+  const m = calcMetrics();
   
   // ── 1. 總投入成本 (含利息) ──
-  // 大字顯示：自備款 + 累計利息
   const mi = document.getElementById('m-inv');
   const invTitle = mi.previousElementSibling;
-  invTitle.textContent = '總投入成本 (含利息)';
-  mi.textContent = fmtN(m.own); // m.own 在 calcMetrics 中已包含利息
+  invTitle.textContent = '總投入成本'; // 移除標題的幣別，統一簡潔
+  mi.textContent = fmtN(m.own); 
   
   let invSub = document.getElementById('m-inv-sub');
   if(!invSub) {
@@ -859,13 +858,13 @@ function renderMetrics(){
     invSub.style.cssText = 'font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4;border-top:1px dashed var(--border);padding-top:4px';
     mi.parentNode.appendChild(invSub);
   }
-  // 拆解顯示
   const selfFund = m.own - m.totalInterest; 
   invSub.innerHTML = `買股自備款: ${fmtN(selfFund)}<br>累計利息: ${fmtN(m.totalInterest)}`;
 
-  // ── 2. 目前市值 (純資產) ──
-  // 依你提議：保持全部金額，不在此處扣除貸款
+  // ── 2. 目前市值 ──
   const mc = document.getElementById('m-cur');
+  const curTitle = mc.previousElementSibling;
+  curTitle.textContent = '目前市值'; // 移除標題的 (TWD)
   mc.textContent = m.curVal > 0 ? fmtN(m.curVal) : '—';
   const navEl = document.getElementById('m-nav-sub');
   if(navEl) navEl.innerHTML = ''; 
@@ -880,11 +879,10 @@ function renderMetrics(){
     xe.className = 'mv';
   }
   
-  // ── 4. 投資總損益 (在此處結算貸款本金) ──
-  // 依你提議：市值 - 貸款本金 - 總投入成本
+  // ── 4. 投資總損益 ──
   const pe = document.getElementById('m-pnl');
   const pTitle = pe.previousElementSibling;
-  pTitle.textContent = '投資總損益 (TWD)';
+  pTitle.textContent = '投資總損益'; // 移除標題的 (TWD)
   
   let pnlSub = document.getElementById('m-pnl-sub');
   if(!pnlSub) {
@@ -895,12 +893,10 @@ function renderMetrics(){
   }
   
   if(m.curVal > 0) {
-    // 最終結算公式：市值 - 貸款本金 - 總投入(含利息)
     const netTotalPnL = m.curVal - m.totalLoan - m.own;
     pe.textContent = (netTotalPnL >= 0 ? '+' : '') + fmtN(netTotalPnL);
     pe.className = 'mv ' + (netTotalPnL >= 0 ? 'pos' : 'neg');
     
-    // 註記貸款本金，讓使用者知道這裡已經扣過了
     pnlSub.innerHTML = `貸款本金: <span style="color:var(--red);font-family:var(--mono)">-${fmtN(m.totalLoan)}</span><br>結算邏輯: 市值 - 貸款 - 總投入`;
   } else {
     pe.textContent = '—';
