@@ -804,8 +804,39 @@ function renderLine() {
   }
   
   if (lineInst) lineInst.destroy();
-  lineInst = new Chart(document.getElementById('lineC'), { type: 'line', data: { labels, datasets: ds }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.raw !== null ? ` ${c.dataset.label}: ${fmtN(c.raw)}` : null } } }, scales: { x: { ticks: { maxTicksLimit: 14, color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.08)' } }, y: { ticks: { color: '#888', font: { size: 10 }, callback: v => fmtK(v) }, grid: { color: 'rgba(128,128,128,0.08)' } } } });
-}
+ lineInst = new Chart(document.getElementById('lineC'), {
+  type: 'line',
+  data: { 
+    labels, 
+    datasets: ds 
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { 
+      mode: 'index', 
+      intersect: false 
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: c => c.raw !== null ? ` ${c.dataset.label}: ${fmtN(c.raw)}` : null
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { maxTicksLimit: 14, color: '#888', font: { size: 10 } },
+        grid: { color: 'rgba(128,128,128,0.08)' }
+      },
+      y: {
+        ticks: { color: '#888', font: { size: 10 }, callback: v => fmtK(v) },
+        grid: { color: 'rgba(128,128,128,0.08)' }
+      }
+    }
+  }
+});
 
 function renderTxList(){
   const el=document.getElementById('tx-list');
