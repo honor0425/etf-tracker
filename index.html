@@ -269,7 +269,8 @@ input[type=range]{accent-color:var(--blue)}
       <div class="ctitle">資產累積曲線（台幣）</div>
       <div class="leg">
         <span><span class="ld" style="background:#378ADD"></span>自有資金累計</span>
-        <span><span class="ld" style="background:#1D9E75"></span>預期報酬曲線</span>
+        <span><span class="ld" style="background:#1D9E75"></span>理論報酬</span>
+        <span><span class="ld" style="background:#D85A30"></span>從今日推估</span>
         <span><span class="ld" style="background:#BA7517;border-radius:50%"></span>目前市值</span>
       </div>
       <div style="position:relative;width:100%;height:260px"><canvas id="lineC" role="img" aria-label="資產累積曲線">資產累積曲線</canvas></div>
@@ -739,35 +740,71 @@ function renderPie(){
   if(pieInst)pieInst.destroy();if(!tot)return;
   pieInst=new Chart(document.getElementById('pieC'),{type:'doughnut',data:{labels:lbls,datasets:[{data,backgroundColor:PC.slice(0,lbls.length),borderWidth:2,borderColor:getComputedStyle(document.body).getPropertyValue('--surface').trim()||'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtN(c.raw)} (${tot>0?Math.round(c.raw/tot*100):0}%)`}}}}});
 }
+function genLine() {
+  if (!txs.length) return { labels: [], own: [], proj: [], future: [] };
+  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date));
+  const start = new Date(sorted[0].date);
+  const today = new Date();
+  
+  // 🌟 將預測時間從 3 年拉長到 10 年，讓複利曲線更明顯
+  const end = new Date(today.getFullYear() + 10, today.getMonth(), 1);
 
-function genLine(){
-  if(!txs.length)return{labels:[],own:[],proj:[]};
-  const sorted=[...txs].sort((a,b)=>a.date.localeCompare(b.date));
-  const start=new Date(sorted[0].date),today=new Date(),end=new Date(today.getFullYear()+3,today.getMonth(),1);
-  const labels=[],own=[],proj=[];
-  let d=new Date(start.getFullYear(),start.getMonth(),1);
-  while(d<=end){
-    const ds=d.toISOString().slice(0,10);
-    labels.push(d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0'));
-    own.push(d<=today?ownFunds(ds):null);
-    let pv=0;txs.filter(t=>t.date<=ds).forEach(t=>{const yrs=Math.max(0,(d-new Date(t.date))/(365.25*86400000));pv+=(t.act==='buy'?1:-1)*toTwd(t.units*t.priceOrig,t.cur)*Math.pow(1+projRate,yrs);});
-    loans.forEach(ln=>{if(ln.s<=ds)pv-=ln.principal||0;});proj.push(Math.max(0,pv));
-    d=new Date(d.getFullYear(),d.getMonth()+1,1);
+  const labels = [], own = [], proj = [], future = [];
+  const etfs = [...new Set(txs.map(t => t.etf))];
+  const curVal = etfs.reduce((s, e) => s + mvTwd(e), 0);
+
+  let d = new Date(start.getFullYear(), start.getMonth(), 1);
+  const tYM = today.getFullYear() + '/' + String(today.getMonth() + 1).padStart(2, '0');
+  let todayI = -1, i = 0;
+
+  while (d <= end) {
+    const ds = d.toISOString().slice(0, 10);
+    const ym = d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0');
+    labels.push(ym);
+    if (ym === tYM) todayI = i;
+
+    // 1. 投入本金 (超過今天的時間點，假設本金不再增加，維持水平)
+    own.push(d <= today ? ownFunds(ds) : ownFunds(today.toISOString().slice(0, 10)));
+
+    // 2. 從第一天開始算的純理論報酬
+    let pv = 0;
+    txs.filter(t => t.date <= ds).forEach(t => {
+      const yrs = Math.max(0, (d - new Date(t.date)) / (365.25 * 86400000));
+      pv += (t.act === 'buy' ? 1 : -1) * toTwd(t.units * t.priceOrig, t.cur) * Math.pow(1 + projRate, yrs);
+    });
+    loans.forEach(ln => { if (ln.s <= ds) pv -= ln.principal || 0; });
+    proj.push(Math.max(0, pv));
+
+    // 3. 🌟 新增：從「今天實際市值」出發的未來推估曲線
+    if (d < new Date(today.getFullYear(), today.getMonth(), 1)) {
+      future.push(null); // 過去的時間不畫這條線
+    } else if (ym === tYM) {
+      future.push(curVal); // 完美接上今天的實際市值
+    } else {
+      const yrs = (d - today) / (365.25 * 86400000);
+      future.push(curVal * Math.pow(1 + projRate, Math.max(0, yrs)));
+    }
+
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    i++;
   }
-  const etfs=[...new Set(txs.map(t=>t.etf))],curVal=etfs.reduce((s,e)=>s+mvTwd(e),0);
-  const tYM=today.getFullYear()+'/'+String(today.getMonth()+1).padStart(2,'0');
-  return{labels,own,proj,curVal,todayI:labels.indexOf(tYM)};
+  return { labels, own, proj, future, curVal, todayI };
 }
 
-function renderLine(){
-  const{labels,own,proj,curVal,todayI}=genLine();
-  const ds=[
-    {label:'自有資金累計',data:own,borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.07)',fill:true,tension:.35,pointRadius:0,borderWidth:2},
-    {label:`預期報酬 (${(projRate*100).toFixed(1)}%)`,data:proj,borderColor:'#1D9E75',borderDash:[5,3],fill:false,tension:.35,pointRadius:0,borderWidth:2}
+function renderLine() {
+  const { labels, own, proj, future, curVal, todayI } = genLine();
+  const ds = [
+    { label: '投入本金累計', data: own, borderColor: '#378ADD', backgroundColor: 'rgba(55,138,221,0.07)', fill: true, tension: .35, pointRadius: 0, borderWidth: 2 },
+    { label: `理論報酬 (${(projRate * 100).toFixed(1)}%)`, data: proj, borderColor: '#1D9E75', borderDash: [5, 3], fill: false, tension: .35, pointRadius: 0, borderWidth: 1.5 },
+    { label: `從今日推估 (${(projRate * 100).toFixed(1)}%)`, data: future, borderColor: '#D85A30', backgroundColor: 'rgba(216,90,48,0.1)', fill: true, tension: .35, pointRadius: 0, borderWidth: 2 }
   ];
-  if(curVal>0&&todayI>=0){const cd=new Array(labels.length).fill(null);cd[todayI]=curVal;ds.push({label:'目前市值',data:cd,borderColor:'#BA7517',backgroundColor:'#BA7517',pointRadius:8,pointHoverRadius:10,showLine:false,borderWidth:2});}
-  if(lineInst)lineInst.destroy();
-  lineInst=new Chart(document.getElementById('lineC'),{type:'line',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw!==null?` ${c.dataset.label}: ${fmtN(c.raw)}`:null}}},scales:{x:{ticks:{maxTicksLimit:14,color:'#888',font:{size:10}},grid:{color:'rgba(128,128,128,0.08)'}},y:{ticks:{color:'#888',font:{size:10},callback:v=>fmtK(v)},grid:{color:'rgba(128,128,128,0.08)'}}}}});
+  if (curVal > 0 && todayI >= 0) {
+    const cd = new Array(labels.length).fill(null); cd[todayI] = curVal;
+    ds.push({ label: '目前實際市值', data: cd, borderColor: '#BA7517', backgroundColor: '#BA7517', pointRadius: 6, pointHoverRadius: 8, showLine: false, borderWidth: 2 });
+  }
+  
+  if (lineInst) lineInst.destroy();
+  lineInst = new Chart(document.getElementById('lineC'), { type: 'line', data: { labels, datasets: ds }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.raw !== null ? ` ${c.dataset.label}: ${fmtN(c.raw)}` : null } } }, scales: { x: { ticks: { maxTicksLimit: 14, color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.08)' } }, y: { ticks: { color: '#888', font: { size: 10 }, callback: v => fmtK(v) }, grid: { color: 'rgba(128,128,128,0.08)' } } } });
 }
 
 function renderTxList(){
