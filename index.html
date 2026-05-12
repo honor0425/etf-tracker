@@ -846,6 +846,7 @@ function renderMetrics(){
   const m=calcMetrics();
   document.getElementById('m-inv').textContent=fmtN(m.own);
   
+  // ── 更新目前市值與真實淨值 ──
   const mc = document.getElementById('m-cur');
   mc.textContent=m.curVal>0?fmtN(m.curVal):'—';
   let navEl = document.getElementById('m-nav-sub');
@@ -864,11 +865,13 @@ function renderMetrics(){
     navEl.style.borderTop = 'none';
   }
 
+  // ── 更新 XIRR ──
   const xe=document.getElementById('m-xirr');
   if(m.xi!==null&&isFinite(m.xi)){xe.textContent=(m.xi*100).toFixed(1)+'%';xe.className='mv '+(m.xi>=0?'pos':'neg');}else{xe.textContent='—';xe.className='mv';}
   
-  const pe=document.getElementById('m-pnl');
-  if(m.curVal>0){pe.textContent=(m.unreal>=0?'+':'')+fmtN(m.unreal);pe.className='mv '+(m.unreal>=0?'pos':'neg');}else{pe.textContent='—';pe.className='mv';}
+  // ── 🌟 修正：動態切換「未實現損益」與「投資總損益」的語意邏輯 ──
+  const pe = document.getElementById('m-pnl');
+  const pTitle = pe.previousElementSibling; // 動態抓取卡片的標題元素
   
   let intEl = document.getElementById('m-pnl-sub');
   if(!intEl) {
@@ -877,10 +880,33 @@ function renderMetrics(){
     intEl.style.cssText = 'font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4;border-top:1px dashed var(--border);padding-top:4px';
     pe.parentNode.appendChild(intEl);
   }
-  if(m.totalInterest > 0) {
-    const netPnL = m.unreal - m.totalInterest;
-    intEl.innerHTML = `累計利息: <span style="color:var(--red);font-family:var(--mono)">-${fmtN(m.totalInterest)}</span><br>總淨損益: <span style="color:${netPnL>=0?'var(--green)':'var(--red)'};font-weight:700;font-family:var(--mono)">${fmtN(netPnL)}</span>`;
+  
+  if(m.curVal > 0) {
+    if(m.totalInterest > 0) {
+      // 情況 A：有繳利息 ➡️ 卡片改為「投資總損益」，大字顯示扣除利息後的真實淨利
+      pTitle.textContent = '投資總損益 (TWD)';
+      const netPnL = m.unreal - m.totalInterest;
+      pe.textContent = (netPnL>=0?'+':'') + fmtN(netPnL);
+      pe.className = 'mv ' + (netPnL>=0?'pos':'neg');
+      
+      // 加上加減號，讓它看起來像是計算明細
+      intEl.innerHTML = `(＋) 帳面未實現: <span style="color:${m.unreal>=0?'var(--green)':'var(--red)'};font-family:var(--mono)">${(m.unreal>=0?'+':'')+fmtN(m.unreal)}</span><br>(－) 已付利息: <span style="color:var(--red);font-family:var(--mono)">${fmtN(m.totalInterest)}</span>`;
+      intEl.style.paddingTop = '4px';
+      intEl.style.borderTop = '1px dashed var(--border)';
+    } else {
+      // 情況 B：無貸款利息 ➡️ 維持純粹的「未實現損益」
+      pTitle.textContent = '未實現損益 (TWD)';
+      pe.textContent = (m.unreal>=0?'+':'') + fmtN(m.unreal);
+      pe.className = 'mv ' + (m.unreal>=0?'pos':'neg');
+      intEl.innerHTML = '';
+      intEl.style.paddingTop = '0';
+      intEl.style.borderTop = 'none';
+    }
   } else {
+    // 尚未有持倉的預設狀態
+    pTitle.textContent = '未實現損益 (TWD)';
+    pe.textContent = '—';
+    pe.className = 'mv';
     intEl.innerHTML = '';
     intEl.style.paddingTop = '0';
     intEl.style.borderTop = 'none';
