@@ -1088,7 +1088,12 @@ async function renderDividends() {
     const estIncome = lastDiv ? toTwd(units * lastDiv, cur) : null;
     // What can they buy with dividend income?
     const px = curPx(e);
-    const reinvestShares = (estIncome && px) ? Math.floor(estIncome / toTwd(px, cur)) : null;
+    let reinvestShares = null;
+    if (estIncome && px) {
+      const rawShares = estIncome / toTwd(px, cur);
+      // 美股支援碎股保留小數點後兩位，台股維持無條件捨去取整數
+      reinvestShares = cur === 'USD' ? parseFloat(rawShares.toFixed(2)) : Math.floor(rawShares);
+    }
     return { e, db, units, cur, nxt, days, lastDiv, estIncome, reinvestShares };
   }).sort((a,b) => {
     if (a.days===null&&b.days===null) return 0;
