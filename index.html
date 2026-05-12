@@ -7,10 +7,6 @@
 <meta name="apple-mobile-web-app-title" content="ETF追蹤器">
 <meta name="application-name" content="ETF追蹤器">
 
-<link rel="apple-touch-icon" sizes="512x512" href="https://fonts.gstatic.com/s/e/notoemoji/latest/1f4c8/512.png">
-
-<link rel="icon" type="image/png" sizes="512x512" href="https://fonts.gstatic.com/s/e/notoemoji/latest/1f4c8/512.png">
-
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -306,6 +302,37 @@ input[type=range]{accent-color:var(--blue)}
 
 
 <script>
+// ══ 動態生成手機主畫面圖示 ══════════════════════════════════════
+(function generateAppIcon() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  
+  // 1. 畫實體背景色（這裡設定為底色 #f7f7f5，你也可以改成 #ffffff 白色）
+  ctx.fillStyle = '#f7f7f5';
+  ctx.fillRect(0, 0, 512, 512);
+  
+  // 2. 畫上超大尺寸的 Emoji 以填滿邊緣
+  ctx.font = '380px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // 稍微將 Y 軸下移至 280 讓圖示在正中央
+  ctx.fillText('📈', 256, 280); 
+  
+  // 3. 將畫好的圖片轉換為手機可讀取的格式並塞入網頁
+  const iconDataUrl = canvas.toDataURL('image/png');
+  
+  const appleLink = document.createElement('link');
+  appleLink.rel = 'apple-touch-icon';
+  appleLink.href = iconDataUrl;
+  document.head.appendChild(appleLink);
+  
+  const androidLink = document.createElement('link');
+  androidLink.rel = 'icon';
+  androidLink.href = iconDataUrl;
+  document.head.appendChild(androidLink);
+})();
+
 // ══ Google Auth ════════════════════════════════════════════════════
 let CLIENT_ID = localStorage.getItem('etf-cid') || '221251730516-58dkn8clgfktl4lnt8rorohvsd6gvm0m.apps.googleusercontent.com';
 let tokenClient = null, accessToken = null;
